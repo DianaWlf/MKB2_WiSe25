@@ -28,7 +28,7 @@ Diese Anwendung zeigt eine **interaktive 3D-Weihnachtskarte**, die über einen *
 
 Der benötigte Marker befindet sich direkt im Repository:
 
-[![Download](https://img.shields.io/badge/Marker-Download-success?style=flat-square)](pattern-stern.png)
+[![Download](https://img.shields.io/badge/Marker-Download-success?style=flat-square)](CC2-Share/Workshop%20IV/pattern-stern.png)
 
 ---
 
