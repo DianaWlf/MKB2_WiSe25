@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AR Weihnachtskarte – Z-Konflikt gefixt</title>
+
+  <!-- A-Frame & AR.js -->
+  <script src="https://aframe.io/releases/1.2.0/aframe.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/gh/AR-js-org/AR.js/aframe/build/aframe-ar.js"></script>
+
+  <style>
+    body {
+      margin: 0;
+      overflow: hidden;
+      background: black;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    #marker-link {
+      position: fixed;
+      top: 10px;
+      left: 10px;
+      background: rgba(0, 0, 0, 0.6);
+      color: #ffffff;
+      padding: 6px 10px;
+      border-radius: 4px;
+      font-size: 12px;
+      text-decoration: underline;
+      z-index: 10;
+    }
+    #marker-link span {
+      color: #ffd700;
+      font-weight: 600;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Link zum Marker-Bild -->
+  <a id="marker-link" href="pattern-stern.png" target="_blank">
+    Marker anzeigen: <span>Weihnachtsstern</span>
+  </a>
+
+  <a-scene
+    embedded
+    arjs="trackingMethod: best; sourceType: webcam; debugUIEnabled: false;"
+    renderer="antialias: true; colorManagement: true;"
+  >
+
+    <a-marker type="pattern" url="pattern-stern.patt">
+
+      <!-- 3D-Karte (liegt direkt auf dem Marker) -->
+      <a-plane
+        position="0 0 0"
+        rotation="-90 0 0"
+        width="2"
+        height="1.2"
+        color="#082032"
+        material="roughness: 0.9; metalness: 0.1;"
+      ></a-plane>
+
+      <!-- Gelber Kreis: deutlich höher + polygonOffset gegen Z-Fighting -->
+      <a-ring
+        position="0 0.05 0"
+        rotation="-90 0 0"
+        radius-inner="0.95"
+        radius-outer="1.0"
+        color="#ffd700"
+        material="emissive: #ffd700; emissiveIntensity: 0.9;
+                  polygonOffset: true; polygonOffsetFactor: -1; polygonOffsetUnits: 1;"
+      ></a-ring>
+
+      <!-- Weihnachtsbaum in der Mitte der Karte -->
+      <a-entity id="tree" position="0 0 0">
+        <!-- Stamm -->
+        <a-box
+          position="0 0.15 0"
+          depth="0.15"
+          height="0.3"
+          width="0.15"
+          color="#8e5a2b"
+        ></a-box>
+
+        <!-- Baumkörper -->
+        <a-cone
+          position="0 0.55 0"
+          radius-bottom="0.45"
+          radius-top="0.02"
+          height="0.7"
+          color="#0f7b3d"
+          material="roughness: 0.4; metalness: 0.3;"
+          animation="property: rotation; to: 0 360 0; loop: true; dur: 8000; easing: linear;"
+        ></a-cone>
+
+        <!-- Stern oben -->
+        <a-sphere
+          position="0 0.9 0"
+          radius="0.08"
+          color="#ffd700"
+          material="emissive: #ffd700; emissiveIntensity: 1.2; metalness: 0.8; roughness: 0.2;"
+        ></a-sphere>
+      </a-entity>
+
+      <!-- Text: noch höher, zOffset + depthTest aus -> kein Flackern -->
+      <a-entity
+        position="0 0.10 0.45"
+        rotation="-90 0 0"
+        text="value: Frohe Weihnachten; align: center; color: #ffffff; width: 3; letterSpacing: 4; zOffset: 0.02"
+        material="depthTest: false;"
+      ></a-entity>
+
+      <!-- Container für viele Lichtpunkte -->
+      <a-entity id="sparkles-root" position="0 0 0"></a-entity>
+
+    </a-marker>
+
+    <a-entity camera></a-entity>
+  </a-scene>
+
+  <script>
+    function random(min, max) {
+      return Math.random() * (max - min) + min;
+    }
+
+    const sparkles = [];
+
+    document.addEventListener("DOMContentLoaded", function () {
+      const root = document.querySelector("#sparkles-root");
+      const count = 35;
+
+      for (let i = 0; i < count; i++) {
+        const sparkleData = {
+          id: i,
+          angle: random(0, Math.PI * 2),
+          radius: random(0.7, 1.1),
+          height: random(0.25, 0.7),   // etwas höher als Ring/Text
+          size: random(0.03, 0.06),
+          color: "#fff8d6"
+        };
+
+        const x = Math.cos(sparkleData.angle) * sparkleData.radius;
+        const z = Math.sin(sparkleData.angle) * sparkleData.radius;
+        const y = sparkleData.height;
+
+        const el = document.createElement("a-sphere");
+        el.setAttribute("position", x + " " + y + " " + z);
+        el.setAttribute("radius", sparkleData.size);
+        el.setAttribute("color", sparkleData.color);
+        el.setAttribute(
+          "material",
+          "emissive: #fff8d6; emissiveIntensity: 1.2; roughness: 0.2; metalness: 0.4;"
+        );
+
+        el.setAttribute("animation__float", {
+          property: "position",
+          dir: "alternate",
+          dur: 1500 + Math.random() * 1500,
+          loop: true,
+          easing: "easeInOutSine",
+          to: x + " " + (y + random(0.05, 0.15)) + " " + z
+        });
+
+        sparkleData.entity = el;
+        sparkles.push(sparkleData);
+        root.appendChild(el);
+      }
+    });
+  </script>
+</body>
+</html>
