@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="de">
+  <head>
+    <meta charset="utf-8" />
+    <title>Behind the Scenes</title>
+
+    <!-- A-Frame & AR.js -->
+    <script src="https://aframe.io/releases/1.2.0/aframe.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/gh/AR-js-org/AR.js/aframe/build/aframe-ar.js"></script>
+
+    <style>
+      body {
+        margin: 0;
+        overflow: hidden;
+      }
+    </style>
+
+    <script>
+      // Karussell-Component (Slider-Style, reverse direction)
+      // - Ein Bild groß in der Mitte (auf dem Marker liegend)
+      // - vorheriges und nächstes Bild sind seitlich sichtbar
+      // - 3 Sekunden Standbild, dann Übergang zum VORHERIGEN Bild
+      // - weiche Übergänge: Größe + Opacity werden interpoliert
+      // - Pausiert automatisch, wenn der Marker unsichtbar ist
+      AFRAME.registerComponent("image-carousel", {
+        schema: {
+          height: { type: "number", default: 0.01 },      // minimale Höhe über dem Marker
+          holdTime: { type: "number", default: 3000 },    // Zeit, die ein Bild groß bleibt (ms)
+          transitionTime: { type: "number", default: 1200 }, // Dauer des Übergangs (ms)
+          bigScale: { type: "number", default: 3.0 },     // Größe des Vordergrundbildes
+          smallScale: { type: "number", default: 1.2 },   // Größe der seitlichen Bilder
+        },
+
+        init: function () {
+          const el = this.el;
+
+          // Kinder (Bilder) holen
+          this.children = Array.from(el.children).filter(function (c) {
+            return c.tagName && c.tagName.toLowerCase() !== "a-animation";
+          });
+
+          if (!this.children.length) return;
+
+          this.length = this.children.length;
+
+          // Index des Bildes, das vorne ist (ganzzahlig)
+          this.currentIndex = 0;
+
+          // State-Machine
+          this.state = "hold"; // "hold" oder "transition"
+          this.elapsedInState = 0; // Zeit nur bei sichtbarem Marker
+          this.transitionProgress = 0;
+          this.fromIndex = 0;
+          this.toIndex = 0;
+
+          // Marker-Tracking (Pause / Resume)
+          this.markerVisible = false;
+          this.markerEl = null;
+
+          let parent = el.parentEl;
+          while (parent && parent.tagName && parent.tagName.toLowerCase() !== "a-marker") {
+            parent = parent.parentEl;
+          }
+          if (parent && parent.tagName && parent.tagName.toLowerCase() === "a-marker") {
+            this.markerEl = parent;
+            parent.addEventListener("markerFound", this.onMarkerFound.bind(this));
+            parent.addEventListener("markerLost", this.onMarkerLost.bind(this));
+          }
+
+          // Anfangs-Layout setzen
+          this.updateCarousel(0);
+        },
+
+        onMarkerFound: function () {
+          this.markerVisible = true;
+        },
+
+        onMarkerLost: function () {
+          this.markerVisible = false;
+        },
+
+        // Hilfsfunktion: kleinster Abstand auf zirkulärem Index
+        shortestOffset: function (index, center, length) {
+          let d = index - center;
+          const half = length / 2;
+          while (d > half) d -= length;
+          while (d < -half) d += length;
+          return d;
+        },
+
+        // Wird jeden Frame aufgerufen
+        tick: function (time, timeDelta) {
+          if (!this.children || !this.children.length) return;
+          if (!this.markerVisible) return; // Marker weg → alles pausiert
+          if (!timeDelta) return;
+
+          const data = this.data;
+          this.elapsedInState += timeDelta;
+
+          if (this.state === "hold") {
+            this.transitionProgress = 0;
+
+            if (this.elapsedInState >= data.holdTime) {
+              // Übergang zum VORHERIGEN Bild starten (Richtung umgedreht)
+              this.state = "transition";
+              this.elapsedInState = 0;
+
+              this.fromIndex = this.currentIndex;
+              this.toIndex = (this.currentIndex - 1 + this.length) % this.length;
+            }
+          } else if (this.state === "transition") {
+            let t = this.elapsedInState / data.transitionTime;
+            if (t > 1) t = 1;
+            // einfache Ease-Funktion (smoothstep)
+            t = t * t * (3 - 2 * t);
+            this.transitionProgress = t;
+
+            if (this.elapsedInState >= data.transitionTime) {
+              // Übergang fertig
+              this.state = "hold";
+              this.elapsedInState = 0;
+              this.currentIndex = this.toIndex;
+              this.transitionProgress = 0;
+            }
+          }
+
+          this.updateCarousel(this.transitionProgress);
+        },
+
+        // Setzt Position, Rotation, Scale und Opacity der Bilder basierend auf dem aktuellen State
+        updateCarousel: function (t) {
+          const data = this.data;
+          const children = this.children;
+          const len = this.length;
+
+          if (!len) return;
+
+          // Abstand zwischen den Bildern auf der X-Achse
+          const spacing = 8.0; // größerer Abstand, damit sich die großen Bilder nicht überlappen
+
+          // Float-CenterIndex während einer Transition berechnen
+          let centerIndex = this.currentIndex;
+          if (this.state === "transition") {
+            const from = this.fromIndex;
+            const toFloat = this.fromIndex - 1; // wir gehen nach links (zum vorherigen Bild)
+            const floatIndex = from + (toFloat - from) * t; // von currentIndex zu currentIndex-1
+            centerIndex = floatIndex; // darf float sein; shortestOffset kommt damit klar
+          }
+
+          for (let i = 0; i < len; i++) {
+            const child = children[i];
+
+            // relativer Abstand zur Mitte (negativ = links, positiv = rechts)
+            const d = this.shortestOffset(i, centerIndex, len);
+            const absD = Math.abs(d);
+
+            // Position: alles liegt flach auf dem Marker, nur X verschiebt sich
+            const x = d * spacing;
+            const y = data.height;
+            const z = 0;
+
+            child.setAttribute("position", { x: x, y: y, z: z });
+
+            // Rotation: parallel zum Marker
+            child.setAttribute("rotation", { x: -90, y: 0, z: 0 });
+
+            // Scale & Opacity für weiche Übergänge
+            let scaleValue;
+            let opacityValue;
+
+            const maxVisible = 2.0; // wie viele "Schritte" links/rechts noch sichtbar sind
+
+            if (absD < 0.001) {
+              // Exakt im Zentrum
+              scaleValue = data.bigScale;
+              opacityValue = 1.0;
+            } else if (absD >= maxVisible) {
+              // Zu weit weg → ausblenden
+              scaleValue = 0.0001;
+              opacityValue = 0.0;
+            } else {
+              // Zwischenbereich: weich von groß/opaque nach klein/transparenter
+              const k = absD / maxVisible; // 0 .. 1
+
+              // Scale interpolieren
+              scaleValue = data.bigScale + (data.smallScale - data.bigScale) * k;
+
+              // Opacity interpolieren (Mitte 1.0, Rand ~0.15)
+              opacityValue = 1.0 - 0.85 * k;
+            }
+
+            child.setAttribute("scale", {
+              x: scaleValue,
+              y: scaleValue,
+              z: scaleValue,
+            });
+
+            child.setAttribute("material", "opacity", opacityValue);
+          }
+        },
+      });
+    </script>
+  </head>
+
+  <body>
+    <!-- AR-Szene -->
+    <a-scene
+      embedded
+      vr-mode-ui="enabled: false"
+      renderer="logarithmicDepthBuffer: true;"
+      arjs="sourceType: webcam; debugUIEnabled: false;">
+
+      <!-- Deine Bilder hier als Assets -->
+      <a-assets>
+        <!-- 
+          TODO: Ersetze die src-Attribute mit deinen echten Bildpfaden
+          (z.B. "bilder/foto1.jpg" usw.)
+        -->
+        <img id="bild1" src="assets/Bild1.jpg" />
+        <img id="bild2" src="assets/Bild2.jpg" />
+        <img id="bild3" src="assets/Bild3.jpg" />
+        <img id="bild4" src="assets/Bild4.jpg" />
+      </a-assets>
+
+      <!-- Marker, der deine .patt Datei nutzt -->
+      <!--
+        TODO: Ersetze "marker.patt" durch den Pfad zu deiner eigenen .patt Datei
+      -->
+      <a-marker type="pattern" url="assets/pattern-marker.patt">
+        <!-- Karussell-Container -->
+        <a-entity
+          id="carousel"
+          image-carousel="height: 0.01; holdTime: 3000; transitionTime: 1200; bigScale: 3.0; smallScale: 1.2">
+
+          <!-- Einzelne Bilder als Planes (groß) -->
+          <a-plane
+            material="src: #bild1; transparent: true; side: double;"
+            width="2.5"
+            height="1.8">
+          </a-plane>
+
+          <a-plane
+            material="src: #bild2; transparent: true; side: double;"
+            width="2.5"
+            height="1.8">
+          </a-plane>
+
+          <a-plane
+            material="src: #bild3; transparent: true; side: double;"
+            width="2.5"
+            height="1.8">
+          </a-plane>
+
+          <a-plane
+            material="src: #bild4; transparent: true; side: double;"
+            width="2.5"
+            height="1.8">
+          </a-plane>
+        </a-entity>
+      </a-marker>
+
+      <!-- Kamera -->
+      <a-entity camera></a-entity>
+    </a-scene>
+  </body>
+</html>
